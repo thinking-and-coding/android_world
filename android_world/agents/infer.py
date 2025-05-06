@@ -340,3 +340,94 @@ class Gpt4Wrapper(LlmWrapper, MultimodalLlmWrapper):
         print('Error calling LLM, will retry soon...')
         print(e)
     return ERROR_CALLING_LLM, None, None
+
+class AzureGpt4Wrapper(LlmWrapper, MultimodalLlmWrapper):
+    """Azure GPT4 wrapper.
+
+      Attributes:
+        azure_api_key: The class gets the Azure api key either explicitly, or
+          through env variable in which case just leave this empty.
+        endpoint: Endpoint for api calling.
+        deployment_id: Model deployment id.
+        max_retry: Max number of retries when some error happens.
+        temperature: The temperature parameter in LLM to control result stability.
+      """
+
+    RETRY_WAITING_SECONDS = 20
+    def __init__(
+            self,
+            max_retry: int = 3,
+            temperature: float = 0.0,
+    ):
+        if 'AZURE_API_KEY' not in os.environ:
+            raise RuntimeError('Azure API key not set.')
+        self.azure_api_key = os.environ['AZURE_API_KEY']
+        self.endpoint = os.environ['AZURE_ENDPOINT']
+        self.deployment_id = os.environ['AZURE_DEPLOYMENT_ID']
+        if max_retry <= 0:
+            max_retry = 3
+            print('Max_retry must be positive. Reset it to 3')
+        self.max_retry = min(max_retry, 5)
+        self.temperature = temperature
+
+    def predict(self, text_prompt: str) -> tuple[str, Optional[bool], Any]:
+        return self.predict_mm(text_prompt, [])
+
+    def predict_mm(
+            self, text_prompt: str, images: list[np.ndarray]
+    ) -> tuple[str, Optional[bool], Any]:
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {self.azure_api_key}',
+        }
+
+        payload = {
+            'temperature': self.temperature,
+            'messages': [{
+                'role': 'user',
+                'content': [
+                    {'type': 'text', 'text': text_prompt},
+                ],
+            }],
+            'max_tokens': 1000,
+        }
+
+        # Gpt-4v supports multiple images, just need to insert them in the content
+        # list.
+        for image in images:
+            payload['messages'][0]['content'].append({
+                'type': 'image_url',
+                'image_url': {
+                    'url': f'data:image/jpeg;base64,{Gpt4Wrapper.encode_image(image)}'
+                },
+            })
+
+        counter = self.max_retry
+        wait_seconds = self.RETRY_WAITING_SECONDS
+        while counter > 0:
+            try:
+                response = requests.post(
+                    f'https://{self.endpoint}/openai/deployments/{self.deployment_id}/chat/completions?api-version=2024-10-21',
+                    headers=headers,
+                    json=payload,
+                )
+                if response.ok and 'choices' in response.json():
+                    return (
+                        response.json()['choices'][0]['message']['content'],
+                        None,
+                        response,
+                    )
+                print(
+                    'Error calling OpenAI API with error message: '
+                    + response.json()['error']['message']
+                )
+                time.sleep(wait_seconds)
+                wait_seconds *= 2
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                # Want to catch all exceptions happened during LLM calls.
+                time.sleep(wait_seconds)
+                wait_seconds *= 2
+                counter -= 1
+                print('Error calling LLM, will retry soon...')
+                print(e)
+        return ERROR_CALLING_LLM, None, None
