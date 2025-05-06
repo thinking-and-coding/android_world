@@ -17,3 +17,4 @@ pytest
 requests
 tenacity
 termcolor
+python-dotenv

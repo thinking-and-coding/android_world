@@ -33,6 +33,8 @@ from matplotlib.pylab import plt
 import numpy as np
 import PIL
 import requests
+import dotenv
+dotenv.load_dotenv()
 
 # OpenAI model used for these experiments.
 _GPT_TURBO = "gpt-4-turbo-2024-04-09"
