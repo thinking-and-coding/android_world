@@ -22,6 +22,7 @@ command-line flags.
 
 from collections.abc import Sequence
 import os
+from typing import Optional
 
 from absl import app
 from absl import flags
@@ -149,10 +150,16 @@ _MINIWOB_ADDITIONAL_GUIDELINES = [
     ),
 ]
 
+_REAL_DEVICE_NAME = flags.DEFINE_string(
+    'real_device_name',
+    None,
+    'The real device name as shown in `adb devices` to run the agent on.',
+)
+
 
 def _get_agent(
     env: interface.AsyncEnv,
-    family: str | None = None,
+    family: Optional[str] = None,
 ) -> base_agent.EnvironmentInteractingAgent:
   """Gets agent."""
   print('Initializing agent...')
@@ -200,7 +207,9 @@ def _main() -> None:
       console_port=_DEVICE_CONSOLE_PORT.value,
       emulator_setup=_EMULATOR_SETUP.value,
       adb_path=_ADB_PATH.value,
+      real_device_name=_REAL_DEVICE_NAME.value,
   )
+  env_launcher.verify_api_level(env)
 
   n_task_combinations = _N_TASK_COMBINATIONS.value
   task_registry = registry.TaskRegistry()

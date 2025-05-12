@@ -14,9 +14,11 @@
 
 """Launches the environment used in the benchmark."""
 
-import platform
+import resource
+from typing import Optional
 
 from absl import logging
+from android_world.env import adb_utils
 from android_world.env import android_world_controller
 from android_world.env import interface
 from android_world.env.setup_device import setup
@@ -29,13 +31,26 @@ _ANDROID_WORLD_API_LEVEL = 33
 
 
 def _get_env(
-    console_port: int, adb_path: str, grpc_port: int
+    console_port: int,
+    adb_path: str,
+    grpc_port: int,
+    real_device_name: Optional[str] = None,
 ) -> interface.AsyncEnv:
   """Creates an AsyncEnv by connecting to an existing Android environment."""
   controller = android_world_controller.get_controller(
-      console_port, adb_path, grpc_port
+      console_port, adb_path, grpc_port, real_device_name
   )
   return interface.AsyncAndroidEnv(controller)
+
+
+def verify_api_level(env: interface.AsyncEnv) -> None:
+  """Verifies that the emulator's API level is expected."""
+  level = adb_utils.get_api_level(env.controller)
+  if level != _ANDROID_WORLD_API_LEVEL:
+    raise ValueError(
+        f'Emulator API level must be {_ANDROID_WORLD_API_LEVEL}, but found'
+        f' {level}.'
+    )
 
 
 def _increase_file_descriptor_limit(limit: int = 32768):
@@ -49,13 +64,7 @@ def _increase_file_descriptor_limit(limit: int = 32768):
     limit: The new file descriptor limit. The default value was determined
       experimentally to not raise too many open files error.
   """
-  system_name = platform.system()
-  if system_name == 'Windows':
-    return
-
   try:
-    import resource  # pylint: disable=g-import-not-at-top
-
     _, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
     if limit > hard:
       logging.warning(
@@ -94,6 +103,7 @@ def load_and_setup_env(
     freeze_datetime: bool = True,
     adb_path: str = android_world_controller.DEFAULT_ADB_PATH,
     grpc_port: int = 8554,
+    real_device_name: Optional[str] = None,
 ) -> interface.AsyncEnv:
   """Create environment with `get_env()` and perform env setup and validation.
 
@@ -113,10 +123,11 @@ def load_and_setup_env(
       2023, to ensure consistent benchmarking.
     adb_path: The location of the adb binary.
     grpc_port: The port for gRPC communication with the emulator.
+    real_device_name: The name of the real device to use.
 
   Returns:
     An interactable Android environment.
   """
-  env = _get_env(console_port, adb_path, grpc_port)
+  env = _get_env(console_port, adb_path, grpc_port, real_device_name)
   setup_env(env, emulator_setup, freeze_datetime)
   return env
